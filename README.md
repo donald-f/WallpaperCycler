@@ -1,16 +1,19 @@
 # WallpaperCycler
 
-A lightweight Windows 11 tray app that cycles wallpapers from a selected folder (recursive), keeps track of which images you've seen, allows next/previous navigation, delete to Recycle Bin, reset seen state, and supports a configurable background fill color. Built with C# (.NET 8) WinForms and SQLite.
+A lightweight Windows 11 tray app that cycles wallpapers from a selected folder (recursive), keeps track of which images you've seen, allows next/previous navigation, delete to Recycle Bin, reset seen state, and supports a configurable background fill color and automatic timed cycling. Built with C# (.NET 8) WinForms and SQLite.
 
 ## Features
 - Tray-based UI (NotifyIcon) with menu: Select folder, Previous, Next, Delete current, Reset seen photos, Settings, Exit
 - Scans folders recursively for images (`.jpg`, `.jpeg`, `.png`, `.bmp`) and tracks them in a local SQLite DB
 - `seenOrdinal` is 0-based; `-1` means unseen
-- Randomized cycle through unseen photos (shuffled queue via SQL `ORDER BY RANDOM()`), previous/next navigation based on `seenOrdinal`
+- Randomized cycle through unseen photos (SQL `ORDER BY RANDOM()`), previous/next navigation based on `seenOrdinal`
 - Composes a wallpaper image sized to the virtual screen (spanning monitors) and saves a temp file, then sets it as wallpaper
 - Deletes files to Recycle Bin (with confirmation)
-- Optional `FileSystemWatcher` to keep DB sync light-weight and a rescanning policy every N advances
-- Autostart with Windows (optional setting)
+- Autostart support (creates/removes shortcut in user Startup folder)
+- Timed cycling option: 10 / 20 / 30 / 60 minutes
+- On restart, the app silently resumes the last shown wallpaper and continues where you left off
+- Lightweight FileSystemWatcher plus occasional DB cleanup
+- Simple append-only log with 1 MB cap (keeps newest content)
 
 ## Getting started
 Requirements:
@@ -24,5 +27,5 @@ Build & run:
 
 To create a single-file publish (recommended for distribution):
 ```
-dotnet publish -r win-x64 -c Release -p:PublishSingleFile=true --self-contained false -o publish
+dotnet publish -r win-x64 -c Release -p:PublishSingleFile=true -p:SelfContained=false -o publish
 ```

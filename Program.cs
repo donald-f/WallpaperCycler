@@ -12,8 +12,11 @@ namespace WallpaperCycler
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            using var main = new MainForm();
+            Logger.Init();
+            Logger.Log("Application starting");
+            var main = new MainForm();
             Application.Run();
+            Logger.Log("Application exiting");
         }
     }
 }
