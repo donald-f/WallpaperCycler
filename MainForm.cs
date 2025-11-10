@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -18,9 +18,8 @@ namespace WallpaperCycler
         private string? selectedFolder;
         private string? currentPath;
         private int currentOrdinal = -1;
-        private int rescanThreshold = 20; // rescans after this many "next" operations
-        private int nextCounter = 0;
         private FileSystemWatcher? watcher;
+        private System.Windows.Forms.Timer cycleTimer;
 
         public MainForm()
         {
@@ -33,12 +32,48 @@ namespace WallpaperCycler
             wallpaperService = new WallpaperService();
 
             InitializeTray();
+            InitializeTimer();
+
+            // Immediately set up watcher if folder already known
+            var lastFolder = db.GetSetting("LastSelectedFolder");
+            if (!string.IsNullOrEmpty(lastFolder) && Directory.Exists(lastFolder))
+            {
+                selectedFolder = lastFolder;
+                SetupWatcher();
+            }
+
+            // Resume last shown wallpaper silently
+            var lastShown = db.GetSetting("LastShownPath");
+            if (!string.IsNullOrEmpty(lastShown) && File.Exists(lastShown))
+            {
+                try
+                {
+                    currentPath = lastShown;
+                    currentOrdinal = db.GetSeenOrdinalForPath(lastShown);
+                    wallpaperService.SetWallpaperWithBackground(currentPath, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"));
+                    Logger.Log($"Resumed wallpaper: {currentPath}");
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log("Failed to resume wallpaper: " + ex.Message);
+                }
+            }
+
+            // Start cycle timer if enabled in settings
+            if (db.Settings.CycleMinutes > 0)
+            {
+                StartCycleTimer(db.Settings.CycleMinutes);
+            }
+
+            // Sync autostart flag with actual state
+            bool isAuto = StartupManager.IsAutostartEnabled();
+            db.Settings.Autostart = isAuto;
+            db.SetSetting("Autostart", isAuto ? "true" : "false");
         }
 
         private void MainForm_Load(object? sender, EventArgs e)
         {
-            // ensure app stays alive for tray
-            this.Visible = false;
+            this.Visible = false; // ensure app stays alive for tray
         }
 
         private void InitializeTray()
@@ -57,10 +92,16 @@ namespace WallpaperCycler
 
             trayIcon = new NotifyIcon();
             trayIcon.Text = "WallpaperCycler";
-            trayIcon.Icon = SystemIcons.Application;
+            trayIcon.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             trayIcon.ContextMenuStrip = trayMenu;
             trayIcon.Visible = true;
             trayIcon.DoubleClick += (s, e) => OnNext(s, e);
+        }
+
+        private void InitializeTimer()
+        {
+            cycleTimer = new System.Windows.Forms.Timer();
+            cycleTimer.Tick += (s, e) => OnNext(s, EventArgs.Empty);
         }
 
         private void OnSelectFolder(object? sender, EventArgs e)
@@ -69,7 +110,9 @@ namespace WallpaperCycler
             if (fbd.ShowDialog() == DialogResult.OK)
             {
                 selectedFolder = fbd.SelectedPath;
+                db.SetSetting("LastSelectedFolder", selectedFolder);
                 trayIcon.ShowBalloonTip(2000, "Folder selected", selectedFolder, ToolTipIcon.Info);
+                Logger.Log($"Folder selected: {selectedFolder}");
                 SetupWatcher();
                 Task.Run(() => db.InitialScan(selectedFolder));
                 // Immediately pick a random unseen and display
@@ -78,11 +121,14 @@ namespace WallpaperCycler
                     var next = db.GetRandomUnseen();
                     if (next != null)
                     {
+                        int newOrdinal = db.GetMaxSeenOrdinal() + 1;
+                        db.MarkSeen(next.Path, newOrdinal);
                         currentPath = next.Path;
-                        currentOrdinal = 0;
-                        db.MarkSeen(next.Path, 0);
-                        ShowWallpaper(next.Path);
+                        currentOrdinal = newOrdinal;
+                        db.SetSetting("LastShownPath", currentPath);
+                        wallpaperService.SetWallpaperWithBackground(next.Path, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"));
                         UpdatePrevEnabled();
+                        Logger.Log($"Initial wallpaper set: {next.Path}");
                     }
                     else
                     {
@@ -100,8 +146,10 @@ namespace WallpaperCycler
             {
                 currentPath = prev.Path;
                 currentOrdinal = prev.SeenOrdinal;
-                ShowWallpaper(currentPath);
+                wallpaperService.SetWallpaperWithBackground(currentPath, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"));
+                db.SetSetting("LastShownPath", currentPath);
                 UpdatePrevEnabled();
+                Logger.Log($"Previous wallpaper: {currentPath}");
             }
             else
             {
@@ -125,36 +173,37 @@ namespace WallpaperCycler
 
                 if (next == null)
                 {
-                    trayIcon.ShowBalloonTip(1500, "No unseen photos", "You've seen all photos. Use Reset to start over.", ToolTipIcon.Info);
-                    return;
+                    //trayIcon.ShowBalloonTip(1500, "No unseen photos", "You've seen all photos. Resetting loop now.", ToolTipIcon.Info);
+                    db.ResetSeen();
+                    next = db.GetRandomUnseen();
+                    if (next == null)
+                    {
+                        trayIcon.ShowBalloonTip(1500, "No images found", "No eligible images in the selected folder.", ToolTipIcon.Warning);
+                        return;
+                    }
                 }
 
                 int newOrdinal = db.GetMaxSeenOrdinal() + 1;
                 db.MarkSeen(next.Path, newOrdinal);
                 currentPath = next.Path;
                 currentOrdinal = newOrdinal;
-                ShowWallpaper(next.Path);
-                nextCounter++;
+                db.SetSetting("LastShownPath", currentPath);
+                wallpaperService.SetWallpaperWithBackground(next.Path, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"));
                 UpdatePrevEnabled();
-
-                if (nextCounter >= rescanThreshold)
-                {
-                    nextCounter = 0;
-                    db.Rescan(selectedFolder);
-                }
+                Logger.Log($"Next wallpaper set: {next.Path}");
             });
         }
 
         private void OnDelete(object? sender, EventArgs e)
         {
             if (currentPath == null) return;
-            var confirm = MessageBox.Show($"Delete this photo and send to Recycle Bin?\n{currentPath}", "Confirm Delete", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+            var confirm = MessageBox.Show($"Delete this photo and send to Recycle Bin?{currentPath}", "Confirm Delete", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
             if (confirm == DialogResult.Yes)
             {
                 try
-                {
-                    Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(currentPath, Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs, Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
+                {   Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(currentPath, Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs, Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
                     db.DeletePath(currentPath);
+                    Logger.Log($"Deleted photo: {currentPath}");
                     trayIcon.ShowBalloonTip(1500, "Deleted", Path.GetFileName(currentPath), ToolTipIcon.Info);
 
                     // advance to next unseen
@@ -163,6 +212,7 @@ namespace WallpaperCycler
                 catch (Exception ex)
                 {
                     MessageBox.Show("Failed to delete file: " + ex.Message);
+                    Logger.Log("Failed to delete file: " + ex.Message);
                 }
             }
         }
@@ -177,6 +227,7 @@ namespace WallpaperCycler
                 currentPath = null;
                 currentOrdinal = -1;
                 UpdatePrevEnabled();
+                Logger.Log("Reset seen photos");
             }
         }
 
@@ -186,6 +237,31 @@ namespace WallpaperCycler
             if (s.ShowDialog() == DialogResult.OK)
             {
                 db.Settings = s.Settings;
+                db.SetSetting("FillColor", ColorTranslator.ToHtml(db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff")));
+                db.SetSetting("Autostart", db.Settings.Autostart ? "true" : "false");
+                db.SetSetting("CycleMinutes", db.Settings.CycleMinutes.ToString());
+                Logger.Log("Settings saved");
+
+                // ✅ Updated autostart handling using new StartupManager
+                StartupManager.SetAutostart(db.Settings.Autostart);
+
+                // Immediately apply new fill color
+                if (!string.IsNullOrEmpty(currentPath) && File.Exists(currentPath))
+                {
+                    wallpaperService.SetWallpaperWithBackground(currentPath, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"));
+                    Logger.Log("Recomposed current wallpaper with new fill color");
+                }
+
+                // Handle cycle timer updates
+                if (db.Settings.CycleMinutes > 0)
+                {
+                    StartCycleTimer(db.Settings.CycleMinutes);
+                }
+                else
+                {
+                    StopCycleTimer();
+                }
+
                 trayIcon.ShowBalloonTip(1000, "Settings saved", "New settings applied.", ToolTipIcon.Info);
             }
         }
@@ -194,6 +270,7 @@ namespace WallpaperCycler
         {
             trayIcon.Visible = false;
             watcher?.Dispose();
+            StopCycleTimer();
             Application.Exit();
         }
 
@@ -211,20 +288,6 @@ namespace WallpaperCycler
             }
         }
 
-        private void ShowWallpaper(string path)
-        {
-            try
-            {
-                var color = db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff");
-                wallpaperService.SetWallpaperWithBackground(path, color);
-                trayIcon.ShowBalloonTip(1000, "Wallpaper set", Path.GetFileName(path), ToolTipIcon.None);
-            }
-            catch (Exception ex)
-            {
-                trayIcon.ShowBalloonTip(2000, "Failed to set wallpaper", ex.Message, ToolTipIcon.Error);
-            }
-        }
-
         private void SetupWatcher()
         {
             watcher?.Dispose();
@@ -234,9 +297,22 @@ namespace WallpaperCycler
                 IncludeSubdirectories = true,
                 EnableRaisingEvents = true
             };
-            watcher.Created += (s, e) => db.HandleFileCreated(e.FullPath);
-            watcher.Deleted += (s, e) => db.HandleFileDeleted(e.FullPath);
-            watcher.Renamed += (s, e) => { db.HandleFileDeleted(e.OldFullPath); db.HandleFileCreated(e.FullPath); };
+            watcher.Created += (s, e) => { db.HandleFileCreated(e.FullPath); Logger.Log($"File created: {e.FullPath}"); };
+            watcher.Deleted += (s, e) => { db.HandleFileDeleted(e.FullPath); Logger.Log($"File deleted: {e.FullPath}"); };
+            watcher.Renamed += (s, e) => { db.HandleFileDeleted(e.OldFullPath); db.HandleFileCreated(e.FullPath); Logger.Log($"File renamed: {e.OldFullPath} -> {e.FullPath}"); };
+        }
+
+        private void StartCycleTimer(int minutes)
+        {
+            cycleTimer.Interval = minutes * 60 * 1000;
+            cycleTimer.Start();
+            Logger.Log($"Cycle timer started: {minutes} minutes");
+        }
+
+        private void StopCycleTimer()
+        {
+            cycleTimer.Stop();
+            Logger.Log("Cycle timer stopped");
         }
     }
 }

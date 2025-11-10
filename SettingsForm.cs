@@ -9,7 +9,7 @@ namespace WallpaperCycler
         public SettingsModel Settings { get; private set; }
         private TextBox colorBox;
         private CheckBox autostartBox;
-        private NumericUpDown rescanNumeric;
+        private ComboBox cycleCombo;
 
         public SettingsForm(SettingsModel settings)
         {
@@ -17,12 +17,12 @@ namespace WallpaperCycler
             this.Text = "Settings";
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.StartPosition = FormStartPosition.CenterParent;
-            this.Width = 320;
-            this.Height = 200;
+            this.Width = 360;
+            this.Height = 220;
 
             var colorLabel = new Label { Text = "Fill color (hex):", Left = 10, Top = 20 };
-            colorBox = new TextBox { Left = 120, Top = 18, Width = 150, Text = ColorTranslator.ToHtml(settings.FillColor ?? Color.Blue) };
-            var colorBtn = new Button { Text = "Pick", Left = 10, Top = 50, Width = 60 };
+            colorBox = new TextBox { Left = 140, Top = 18, Width = 170, Text = ColorTranslator.ToHtml(settings.FillColor ?? Color.Blue) };
+            var colorBtn = new Button { Text = "Pick", Left = 320, Top = 16, Width = 24 };
             colorBtn.Click += (s, e) =>
             {
                 using var dlg = new ColorDialog();
@@ -32,25 +32,50 @@ namespace WallpaperCycler
                 }
             };
 
-            autostartBox = new CheckBox { Text = "Start with Windows", Left = 10, Top = 85, Checked = settings.Autostart };
-            var rescanLabel = new Label { Text = "Rescan threshold:", Left = 10, Top = 115 };
-            rescanNumeric = new NumericUpDown { Left = 120, Top = 112, Minimum = 1, Maximum = 1000, Value = settings.RescanThreshold };
+            autostartBox = new CheckBox { Text = "Start with Windows", Left = 10, Top = 60, Checked = settings.Autostart };
+            var cycleLabel = new Label { Text = "Cycle interval:", Left = 10, Top = 95 };
+            cycleCombo = new ComboBox { Left = 140, Top = 92, Width = 170, DropDownStyle = ComboBoxStyle.DropDownList };
+            cycleCombo.Items.AddRange(new object[] { "Off", "10 minutes", "20 minutes", "30 minutes", "60 minutes" });
+            cycleCombo.SelectedIndex = IndexForMinutes(settings.CycleMinutes);
 
-            var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Left = 120, Top = 140 };
+            var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Left = 140, Top = 140 };
             ok.Click += Ok_Click;
-            var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Left = 200, Top = 140 };
+            var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Left = 220, Top = 140 };
 
-            this.Controls.AddRange(new Control[] { colorLabel, colorBox, colorBtn, autostartBox, rescanLabel, rescanNumeric, ok, cancel });
+            this.Controls.AddRange(new Control[] { colorLabel, colorBox, colorBtn, autostartBox, cycleLabel, cycleCombo, ok, cancel });
+        }
+
+        private int IndexForMinutes(int minutes)
+        {
+            return minutes switch
+            {
+                10 => 1,
+                20 => 2,
+                30 => 3,
+                60 => 4,
+                _ => 0
+            };
+        }
+
+        private int MinutesForIndex(int idx)
+        {
+            return idx switch
+            {
+                1 => 10,
+                2 => 20,
+                3 => 30,
+                4 => 60,
+                _ => 0
+            };
         }
 
         private void Ok_Click(object? sender, EventArgs e)
         {
             try
-            {
-                var c = ColorTranslator.FromHtml(colorBox.Text);
+            {   var c = ColorTranslator.FromHtml(colorBox.Text);
                 Settings.FillColor = c;
                 Settings.Autostart = autostartBox.Checked;
-                Settings.RescanThreshold = (int)rescanNumeric.Value;
+                Settings.CycleMinutes = MinutesForIndex(cycleCombo.SelectedIndex);
                 this.DialogResult = DialogResult.OK;
                 this.Close();
             }

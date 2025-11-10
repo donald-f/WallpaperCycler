@@ -11,7 +11,7 @@ namespace WallpaperCycler
     {
         public System.Drawing.Color? FillColor { get; set; } = System.Drawing.ColorTranslator.FromHtml("#0b5fff");
         public bool Autostart { get; set; } = true;
-        public int RescanThreshold { get; set; } = 20;
+        public int CycleMinutes { get; set; } = 0; // 0 = off
     }
 
     public record PhotoRow(string Path, int SeenOrdinal, string ModifiedDate);
@@ -58,12 +58,14 @@ CREATE TABLE IF NOT EXISTS AppSettings (
                 // insert defaults
                 SetSetting("FillColor", "#0b5fff");
                 SetSetting("Autostart", "true");
-                SetSetting("RescanThreshold", "20");
+                SetSetting("CycleMinutes", "0");
+                SetSetting("LastShownPath", "");
+                SetSetting("LastSelectedFolder", "");
             }
             LoadSettings();
         }
 
-        private void SetSetting(string key, string value)
+        public void SetSetting(string key, string value)
         {
             using var conn = new SqliteConnection(connString);
             conn.Open();
@@ -74,7 +76,7 @@ CREATE TABLE IF NOT EXISTS AppSettings (
             cmd.ExecuteNonQuery();
         }
 
-        private string? GetSetting(string key)
+        public string? GetSetting(string key)
         {
             using var conn = new SqliteConnection(connString);
             conn.Open();
@@ -88,14 +90,14 @@ CREATE TABLE IF NOT EXISTS AppSettings (
         private void LoadSettings()
         {
             var c = GetSetting("FillColor");
-            if (c != null)
+            if (c != null && c != "")
             {
                 Settings.FillColor = System.Drawing.ColorTranslator.FromHtml(c);
             }
             var a = GetSetting("Autostart");
-            if (a != null) Settings.Autostart = bool.Parse(a);
-            var t = GetSetting("RescanThreshold");
-            if (t != null) Settings.RescanThreshold = int.Parse(t);
+            if (!string.IsNullOrEmpty(a)) Settings.Autostart = bool.Parse(a);
+            var t = GetSetting("CycleMinutes");
+            if (!string.IsNullOrEmpty(t)) Settings.CycleMinutes = int.Parse(t);
         }
 
         public void InitialScan(string folder)
@@ -224,6 +226,18 @@ CREATE TABLE IF NOT EXISTS AppSettings (
         public void HandleFileDeleted(string path)
         {
             DeletePath(path);
+        }
+
+        public int GetSeenOrdinalForPath(string path)
+        {
+            using var conn = new SqliteConnection(connString);
+            conn.Open();
+            var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT SeenOrdinal FROM Photos WHERE Path = $p LIMIT 1";
+            cmd.Parameters.AddWithValue("$p", path);
+            var r = cmd.ExecuteScalar();
+            if (r == null) return -1;
+            return Convert.ToInt32(r);
         }
     }
 }
