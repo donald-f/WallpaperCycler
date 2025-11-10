@@ -178,6 +178,15 @@ CREATE TABLE IF NOT EXISTS AppSettings (
             cmd.ExecuteNonQuery();
         }
 
+        public void DeleteAllPaths()
+        {
+            using var conn = new SqliteConnection(connString);
+            conn.Open();
+            var cmd = conn.CreateCommand();
+            cmd.CommandText = "DELETE FROM Photos";
+            cmd.ExecuteNonQuery();
+        }
+
         public void DeleteMissingPaths()
         {
             using var conn = new SqliteConnection(connString);
@@ -194,12 +203,12 @@ CREATE TABLE IF NOT EXISTS AppSettings (
             foreach (var d in toDelete) DeletePath(d);
         }
 
-        public void Rescan(string? root)
-        {
-            if (string.IsNullOrEmpty(root) || !Directory.Exists(root)) return;
-            InitialScan(root);
-            DeleteMissingPaths();
-        }
+        //public void Rescan(string? root)
+        //{
+        //    if (string.IsNullOrEmpty(root) || !Directory.Exists(root)) return;
+        //    InitialScan(root);
+        //    DeleteMissingPaths();
+        //}
 
         public void ResetSeen()
         {

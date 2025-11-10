@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -85,6 +86,7 @@ namespace WallpaperCycler
             trayMenu.Items.Add(prevItem);
             trayMenu.Items.Add("Next Photo", null, OnNext);
             trayMenu.Items.Add("Delete Current Photo", null, OnDelete);
+            trayMenu.Items.Add("Show in File Explorer", null, OnShowInExplorer);
             trayMenu.Items.Add("Reset Seen Photos", null, OnReset);
             trayMenu.Items.Add(new ToolStripSeparator());
             trayMenu.Items.Add("Settings", null, OnSettings);
@@ -109,34 +111,64 @@ namespace WallpaperCycler
             using var fbd = new FolderBrowserDialog();
             if (fbd.ShowDialog() == DialogResult.OK)
             {
-                selectedFolder = fbd.SelectedPath;
-                db.SetSetting("LastSelectedFolder", selectedFolder);
-                trayIcon.ShowBalloonTip(2000, "Folder selected", selectedFolder, ToolTipIcon.Info);
-                Logger.Log($"Folder selected: {selectedFolder}");
-                SetupWatcher();
-                Task.Run(() => db.InitialScan(selectedFolder));
-                // Immediately pick a random unseen and display
-                Task.Run(() =>
-                {
-                    var next = db.GetRandomUnseen();
-                    if (next != null)
-                    {
-                        int newOrdinal = db.GetMaxSeenOrdinal() + 1;
-                        db.MarkSeen(next.Path, newOrdinal);
-                        currentPath = next.Path;
-                        currentOrdinal = newOrdinal;
-                        db.SetSetting("LastShownPath", currentPath);
-                        wallpaperService.SetWallpaperWithBackground(next.Path, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"));
-                        UpdatePrevEnabled();
-                        Logger.Log($"Initial wallpaper set: {next.Path}");
-                    }
-                    else
-                    {
-                        trayIcon.ShowBalloonTip(2000, "No images found", "No eligible images in the selected folder.", ToolTipIcon.Warning);
-                    }
-                });
+                LoadAndDisplayFirstPhoto(fbd.SelectedPath);
             }
         }
+
+
+        private void LoadAndDisplayFirstPhoto(string folderPath)
+        {
+            selectedFolder = folderPath;
+            db.SetSetting("LastSelectedFolder", selectedFolder);
+            trayIcon.ShowBalloonTip(2000, "Folder selected", selectedFolder, ToolTipIcon.Info);
+            Logger.Log($"Folder selected: {selectedFolder}");
+
+            SetupWatcher();
+
+            Task.Run(() =>
+            {
+                db.DeleteAllPaths();
+                db.InitialScan(selectedFolder);
+
+                var next = db.GetRandomUnseen();
+
+                if (next != null)
+                {
+                    int newOrdinal = db.GetMaxSeenOrdinal() + 1;
+                    db.MarkSeen(next.Path, newOrdinal);
+                    currentPath = next.Path;
+                    currentOrdinal = newOrdinal;
+                    db.SetSetting("LastShownPath", currentPath);
+
+                    var fillColor = db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff");
+                    wallpaperService.SetWallpaperWithBackground(next.Path, fillColor);
+
+                    UpdatePrevEnabled();
+                    UpdateExplorerEnabled();
+
+                    Logger.Log($"Initial wallpaper set: {next.Path}");
+                }
+                else
+                {
+                    var fillColor = db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff");
+                    wallpaperService.SetSolidColorBackground(fillColor);
+
+                    currentPath = null;
+                    currentOrdinal = -1;
+
+                    UpdatePrevEnabled();
+                    UpdateExplorerEnabled();
+
+                    db.SetSetting("LastShownPath", "");
+
+                    trayIcon.ShowBalloonTip(2000, "No images found",
+                        "No eligible images in the selected folder.", ToolTipIcon.Warning);
+
+                    Logger.Log($"No images found in folder: {selectedFolder}. Applied solid fill background.");
+                }
+            });
+        }
+
 
         private void OnPrevious(object? sender, EventArgs e)
         {
@@ -157,11 +189,14 @@ namespace WallpaperCycler
                 db.DeleteMissingPaths();
                 trayIcon.ShowBalloonTip(1500, "Previous unavailable", "Could not go back further.", ToolTipIcon.Info);
                 UpdatePrevEnabled();
+                UpdateExplorerEnabled();
             }
         }
 
         private void OnNext(object? sender, EventArgs e)
         {
+            bool needFolderSelection = false;
+
             Task.Run(() =>
             {
                 var next = db.GetRandomUnseen();
@@ -173,12 +208,11 @@ namespace WallpaperCycler
 
                 if (next == null)
                 {
-                    //trayIcon.ShowBalloonTip(1500, "No unseen photos", "You've seen all photos. Resetting loop now.", ToolTipIcon.Info);
                     db.ResetSeen();
                     next = db.GetRandomUnseen();
                     if (next == null)
                     {
-                        trayIcon.ShowBalloonTip(1500, "No images found", "No eligible images in the selected folder.", ToolTipIcon.Warning);
+                        needFolderSelection = true;
                         return;
                     }
                 }
@@ -188,20 +222,53 @@ namespace WallpaperCycler
                 currentPath = next.Path;
                 currentOrdinal = newOrdinal;
                 db.SetSetting("LastShownPath", currentPath);
-                wallpaperService.SetWallpaperWithBackground(next.Path, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"));
+
+                wallpaperService.SetWallpaperWithBackground(
+                    next.Path,
+                    db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff")
+                );
+
                 UpdatePrevEnabled();
+                UpdateExplorerEnabled();
                 Logger.Log($"Next wallpaper set: {next.Path}");
-            });
+            })
+            .ContinueWith(t =>
+            {
+                // ✅ Back on UI thread
+                if (needFolderSelection)
+                {
+                    if (MessageBox.Show(
+                        "No images found. Would you like to select a new folder?",
+                        "Select New Folder",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Question
+                    ) == DialogResult.Yes)
+                    {
+                        using var fbd = new FolderBrowserDialog();
+                        if (fbd.ShowDialog() == DialogResult.OK)
+                        {
+                            LoadAndDisplayFirstPhoto(fbd.SelectedPath);
+                        }
+                    }
+                }
+            }, TaskScheduler.FromCurrentSynchronizationContext());  // ensures UI thread
         }
+
 
         private void OnDelete(object? sender, EventArgs e)
         {
-            if (currentPath == null) return;
+            if (currentPath == null)
+            {
+                trayIcon.ShowBalloonTip(2000, "No images selected",
+                            "No file is currently selected to delete.", ToolTipIcon.Warning);
+                return;
+            }
             var confirm = MessageBox.Show($"Delete this photo and send to Recycle Bin?{currentPath}", "Confirm Delete", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
             if (confirm == DialogResult.Yes)
             {
                 try
-                {   Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(currentPath, Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs, Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
+                {
+                    Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(currentPath, Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs, Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
                     db.DeletePath(currentPath);
                     Logger.Log($"Deleted photo: {currentPath}");
                     trayIcon.ShowBalloonTip(1500, "Deleted", Path.GetFileName(currentPath), ToolTipIcon.Info);
@@ -216,6 +283,29 @@ namespace WallpaperCycler
                 }
             }
         }
+
+        private void OnShowInExplorer(object? sender, EventArgs e)
+        {
+            if (string.IsNullOrEmpty(currentPath) || !File.Exists(currentPath))
+            {
+                trayIcon.ShowBalloonTip(1500, "File not found", "Current photo no longer exists.", ToolTipIcon.Warning);
+                return;
+            }
+
+            try
+            {
+                // Open the folder and highlight the file
+                string args = $"/select,\"{currentPath}\"";
+                System.Diagnostics.Process.Start("explorer.exe", args);
+                Logger.Log($"Opened in Explorer: {currentPath}");
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Failed to open Explorer: {ex.Message}");
+                trayIcon.ShowBalloonTip(1500, "Error", "Could not open File Explorer.", ToolTipIcon.Error);
+            }
+        }
+
 
         private void OnReset(object? sender, EventArgs e)
         {
@@ -300,6 +390,15 @@ namespace WallpaperCycler
             watcher.Created += (s, e) => { db.HandleFileCreated(e.FullPath); Logger.Log($"File created: {e.FullPath}"); };
             watcher.Deleted += (s, e) => { db.HandleFileDeleted(e.FullPath); Logger.Log($"File deleted: {e.FullPath}"); };
             watcher.Renamed += (s, e) => { db.HandleFileDeleted(e.OldFullPath); db.HandleFileCreated(e.FullPath); Logger.Log($"File renamed: {e.OldFullPath} -> {e.FullPath}"); };
+        }
+
+        private void UpdateExplorerEnabled()
+        {
+            var showInExplorerItem = trayMenu.Items.Cast<ToolStripItem>()
+    .FirstOrDefault(i => !String.IsNullOrEmpty(i.Text) && i.Text.Contains("Explorer")) as ToolStripMenuItem;
+            if (showInExplorerItem != null)
+                showInExplorerItem.Enabled = !string.IsNullOrEmpty(currentPath) && File.Exists(currentPath);
+
         }
 
         private void StartCycleTimer(int minutes)
