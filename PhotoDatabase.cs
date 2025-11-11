@@ -10,7 +10,7 @@ namespace WallpaperCycler
     public class SettingsModel
     {
         public System.Drawing.Color? FillColor { get; set; } = System.Drawing.ColorTranslator.FromHtml("#0b5fff");
-        public bool Autostart { get; set; } = true;
+        //public bool Autostart { get; set; } = true;
         public int CycleMinutes { get; set; } = 0; // 0 = off
     }
 
@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS AppSettings (
             {
                 // insert defaults
                 SetSetting("FillColor", "#0b5fff");
-                SetSetting("Autostart", "true");
+                //SetSetting("Autostart", "true");
                 SetSetting("CycleMinutes", "0");
                 SetSetting("LastShownPath", "");
                 SetSetting("LastSelectedFolder", "");
@@ -94,8 +94,8 @@ CREATE TABLE IF NOT EXISTS AppSettings (
             {
                 Settings.FillColor = System.Drawing.ColorTranslator.FromHtml(c);
             }
-            var a = GetSetting("Autostart");
-            if (!string.IsNullOrEmpty(a)) Settings.Autostart = bool.Parse(a);
+            //var a = GetSetting("Autostart");
+            //if (!string.IsNullOrEmpty(a)) Settings.Autostart = bool.Parse(a);
             var t = GetSetting("CycleMinutes");
             if (!string.IsNullOrEmpty(t)) Settings.CycleMinutes = int.Parse(t);
         }

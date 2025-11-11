@@ -67,9 +67,9 @@ namespace WallpaperCycler
             }
 
             // Sync autostart flag with actual state
-            bool isAuto = StartupManager.IsAutostartEnabled();
-            db.Settings.Autostart = isAuto;
-            db.SetSetting("Autostart", isAuto ? "true" : "false");
+            //bool isAuto = StartupManager.IsAutostartEnabled();
+            //db.Settings.Autostart = isAuto;
+            //db.SetSetting("Autostart", isAuto ? "true" : "false");
         }
 
         private void MainForm_Load(object? sender, EventArgs e)
@@ -352,12 +352,12 @@ namespace WallpaperCycler
             {
                 db.Settings = s.Settings;
                 db.SetSetting("FillColor", ColorTranslator.ToHtml(db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff")));
-                db.SetSetting("Autostart", db.Settings.Autostart ? "true" : "false");
+                //db.SetSetting("Autostart", db.Settings.Autostart ? "true" : "false");
                 db.SetSetting("CycleMinutes", db.Settings.CycleMinutes.ToString());
                 Logger.Log("Settings saved");
 
                 // ✅ Updated autostart handling using new StartupManager
-                StartupManager.SetAutostart(db.Settings.Autostart);
+                //StartupManager.SetAutostart(db.Settings.Autostart);
 
                 // Immediately apply new fill color
                 if (!string.IsNullOrEmpty(currentPath) && File.Exists(currentPath))

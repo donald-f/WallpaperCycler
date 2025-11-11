@@ -9,7 +9,7 @@ A lightweight Windows 11 tray app that cycles wallpapers from a selected folder 
 - Randomized cycle through unseen photos (SQL `ORDER BY RANDOM()`), previous/next navigation based on `seenOrdinal`
 - Composes a wallpaper image sized to the virtual screen (spanning monitors) and saves a temp file, then sets it as wallpaper
 - Deletes files to Recycle Bin (with confirmation)
-- Autostart support (creates/removes shortcut in user Startup folder)
+- Autostart support (creates/removes shortcut in user Startup folder) -- antivirus false positives occur (disabled for now)
 - Timed cycling option: 10 / 20 / 30 / 60 minutes
 - On restart, the app silently resumes the last shown wallpaper and continues where you left off
 - Lightweight FileSystemWatcher plus occasional DB cleanup
