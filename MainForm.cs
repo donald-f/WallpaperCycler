@@ -234,7 +234,7 @@ namespace WallpaperCycler
             })
             .ContinueWith(t =>
             {
-                // ✅ Back on UI thread
+                // Back on UI thread
                 if (needFolderSelection)
                 {
                     if (MessageBox.Show(
@@ -271,7 +271,6 @@ namespace WallpaperCycler
                     Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(currentPath, Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs, Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
                     db.DeletePath(currentPath);
                     Logger.Log($"Deleted photo: {currentPath}");
-                    trayIcon.ShowBalloonTip(1500, "Deleted", Path.GetFileName(currentPath), ToolTipIcon.Info);
 
                     // advance to next unseen
                     OnNext(this, EventArgs.Empty);
