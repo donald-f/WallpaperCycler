@@ -263,16 +263,40 @@ namespace WallpaperCycler
                             "No file is currently selected to delete.", ToolTipIcon.Warning);
                 return;
             }
-            var confirm = MessageBox.Show($"Delete this photo and send to Recycle Bin?{currentPath}", "Confirm Delete", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+
+            var confirm = MessageBox.Show(
+                $"Delete this photo and its metadata (if present) and send to Recycle Bin?\n{currentPath}",
+                "Confirm Delete",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning
+            );
+
             if (confirm == DialogResult.Yes)
             {
                 try
                 {
-                    Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(currentPath, Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs, Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
-                    db.DeletePath(currentPath);
+                    // Delete the main image
+                    Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(
+                        currentPath,
+                        Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
+                        Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin
+                    );
                     Logger.Log($"Deleted photo: {currentPath}");
+                    db.DeletePath(currentPath);
 
-                    // advance to next unseen
+                    // Delete the associated JSON file if it exists
+                    string jsonPath = currentPath + ".supplemental-metadata.json";
+                    if (File.Exists(jsonPath))
+                    {
+                        Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(
+                            jsonPath,
+                            Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
+                            Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin
+                        );
+                        Logger.Log($"Deleted metadata JSON: {jsonPath}");
+                    }
+
+                    // Advance to next unseen
                     OnNext(this, EventArgs.Empty);
                 }
                 catch (Exception ex)
@@ -282,6 +306,7 @@ namespace WallpaperCycler
                 }
             }
         }
+
 
         private void OnShowInExplorer(object? sender, EventArgs e)
         {
