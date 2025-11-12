@@ -6,6 +6,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using GeoTimeZone;
 
 namespace WallpaperCycler
 {
@@ -13,7 +14,7 @@ namespace WallpaperCycler
     {
         private readonly string tempFile = Path.Combine(Path.GetTempPath(), "wallcycler_current.bmp");
 
-        public void SetWallpaperWithBackground(string imagePath, Color bgColor)
+        public void SetWallpaperWithBackground(string imagePath, Color bgColor, bool showDate = false)
         {
             var vs = SystemInformation.VirtualScreen;
             using var canvas = new Bitmap(vs.Width, vs.Height);
@@ -24,18 +25,23 @@ namespace WallpaperCycler
 
                 using var img = Image.FromFile(imagePath);
                 RotateImageIfNeeded(img);
-
-                // compute scaled size to fit without stretching
                 var targetRect = GetCenteredRect(img.Width, img.Height, vs.Width, vs.Height);
                 g.DrawImage(img, targetRect);
+
+                if (showDate)
+                {
+                    var dateTaken = PhotoMetadataHelper.GetLocalizedDateTaken(imagePath);
+                    if (dateTaken != null)
+                    {
+                        DrawDateOverlay(g, dateTaken.Value, canvas.Width, canvas.Height);
+                    }
+                }
             }
 
-            // save as BMP (Windows-friendly)
             canvas.Save(tempFile, ImageFormat.Bmp);
-
-            // set as wallpaper
             SetWallpaper(tempFile);
         }
+
 
         private void RotateImageIfNeeded(Image img)
         {
@@ -126,5 +132,19 @@ namespace WallpaperCycler
         {
             SystemParametersInfo(SPI_SETDESKWALLPAPER, 0, path, SPIF_UPDATEINIFILE | SPIF_SENDWININICHANGE);
         }
+
+        private void DrawDateOverlay(Graphics g, DateTime dt, int width, int height)
+        {
+            string text = dt.ToString("MMMM d, yyyy");
+            using var font = new Font("Segoe UI", 28, FontStyle.Bold);
+            var size = g.MeasureString(text, font);
+            var rect = new RectangleF(width - size.Width - 30, height - size.Height - 30, size.Width + 20, size.Height + 10);
+
+            using var bgBrush = new SolidBrush(Color.FromArgb(160, 0, 0, 0)); // semi-transparent dark
+            g.FillRectangle(bgBrush, rect);
+            using var textBrush = new SolidBrush(Color.FromArgb(240, 255, 255, 255)); // off-white
+            g.DrawString(text, font, textBrush, rect.Left + 10, rect.Top + 5);
+        }
+
     }
 }

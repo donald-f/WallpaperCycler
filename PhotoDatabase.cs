@@ -12,6 +12,7 @@ namespace WallpaperCycler
         public System.Drawing.Color? FillColor { get; set; } = System.Drawing.ColorTranslator.FromHtml("#0b5fff");
         //public bool Autostart { get; set; } = true;
         public int CycleMinutes { get; set; } = 0; // 0 = off
+        public bool ShowDateOnWallpaper { get; set; }
     }
 
     public record PhotoRow(string Path, int SeenOrdinal, string ModifiedDate);

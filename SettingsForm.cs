@@ -18,7 +18,7 @@ namespace WallpaperCycler
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.StartPosition = FormStartPosition.CenterParent;
             this.Width = 400;
-            this.Height = 220;
+            this.Height = 230;
 
             var colorLabel = new Label { Text = "Fill color (hex):", Left = 10, Top = 20 };
             colorBox = new TextBox { Left = 140, Top = 18, Width = 170, Text = ColorTranslator.ToHtml(settings.FillColor ?? Color.Blue) };
@@ -32,18 +32,20 @@ namespace WallpaperCycler
                 }
             };
 
-            //autostartBox = new CheckBox { Text = "Start with Windows", Left = 10, Top = 60, Checked = settings.Autostart };
+            var dateBox = new CheckBox { Text = "Include photo date on wallpaper", Left = 10, Top = 60, Width = 300, Checked = settings.ShowDateOnWallpaper };
+
             var cycleLabel = new Label { Text = "Cycle interval:", Left = 10, Top = 95 };
             cycleCombo = new ComboBox { Left = 140, Top = 92, Width = 170, DropDownStyle = ComboBoxStyle.DropDownList };
             cycleCombo.Items.AddRange(new object[] { "Off", "10 minutes", "20 minutes", "30 minutes", "60 minutes" });
             cycleCombo.SelectedIndex = IndexForMinutes(settings.CycleMinutes);
 
-            var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Left = 140, Top = 140 };
+            var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Left = 140, Top = 150 };
             ok.Click += Ok_Click;
-            var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Left = 220, Top = 140 };
+            var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Left = 220, Top = 150 };
 
-            this.Controls.AddRange(new Control[] { colorLabel, colorBox, colorBtn, cycleLabel, cycleCombo, ok, cancel });
+            this.Controls.AddRange(new Control[] { colorLabel, colorBox, colorBtn, dateBox, cycleLabel, cycleCombo, ok, cancel });
         }
+
 
         private int IndexForMinutes(int minutes)
         {
@@ -76,6 +78,7 @@ namespace WallpaperCycler
                 Settings.FillColor = c;
                 //Settings.Autostart = autostartBox.Checked;
                 Settings.CycleMinutes = MinutesForIndex(cycleCombo.SelectedIndex);
+                Settings.ShowDateOnWallpaper = this.Controls.OfType<CheckBox>().FirstOrDefault(c => c.Text.Contains("Include"))?.Checked ?? false;
                 this.DialogResult = DialogResult.OK;
                 this.Close();
             }

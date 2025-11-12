@@ -7,6 +7,8 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using MetadataExtractor;
+using MetadataExtractor.Formats.Exif;
 
 namespace WallpaperCycler
 {
@@ -37,7 +39,7 @@ namespace WallpaperCycler
 
             // Immediately set up watcher if folder already known
             var lastFolder = db.GetSetting("LastSelectedFolder");
-            if (!string.IsNullOrEmpty(lastFolder) && Directory.Exists(lastFolder))
+            if (!string.IsNullOrEmpty(lastFolder) && System.IO.Directory.Exists(lastFolder))
             {
                 selectedFolder = lastFolder;
                 SetupWatcher();
@@ -87,6 +89,12 @@ namespace WallpaperCycler
             trayMenu.Items.Add("Next Photo", null, OnNext);
             trayMenu.Items.Add("Delete Current Photo", null, OnDelete);
             trayMenu.Items.Add("Show in File Explorer", null, OnShowInExplorer);
+            var locItem = new ToolStripMenuItem("View Photo Location", null, OnViewLocation)
+            {
+                Name = "location",
+                Enabled = false
+            };
+            trayMenu.Items.Add(locItem);
             trayMenu.Items.Add("Reset Seen Photos", null, OnReset);
             trayMenu.Items.Add(new ToolStripSeparator());
             trayMenu.Items.Add("Settings", null, OnSettings);
@@ -145,6 +153,7 @@ namespace WallpaperCycler
 
                     UpdatePrevEnabled();
                     UpdateExplorerEnabled();
+                    UpdateLocationEnabled();
 
                     Logger.Log($"Initial wallpaper set: {next.Path}");
                 }
@@ -158,6 +167,7 @@ namespace WallpaperCycler
 
                     UpdatePrevEnabled();
                     UpdateExplorerEnabled();
+                    UpdateLocationEnabled();
 
                     db.SetSetting("LastShownPath", "");
 
@@ -193,6 +203,7 @@ namespace WallpaperCycler
                     db.SetSetting("LastShownPath", currentPath);
                     UpdatePrevEnabled();
                     UpdateExplorerEnabled();
+                    UpdateLocationEnabled();
                     Logger.Log($"Previous wallpaper: {currentPath}");
                     return;
                 }
@@ -206,6 +217,7 @@ namespace WallpaperCycler
             trayIcon.ShowBalloonTip(1500, "Previous unavailable", "Could not go back further.", ToolTipIcon.Info);
             UpdatePrevEnabled();
             UpdateExplorerEnabled();
+            UpdateLocationEnabled();
         }
 
 
@@ -233,6 +245,7 @@ namespace WallpaperCycler
                     db.SetSetting("LastShownPath", currentPath);
                     UpdatePrevEnabled();
                     UpdateExplorerEnabled();
+                    UpdateLocationEnabled();
                     Logger.Log($"Next wallpaper (sequential): {currentPath}");
                     return;
                 }
@@ -276,6 +289,7 @@ namespace WallpaperCycler
 
                 UpdatePrevEnabled();
                 UpdateExplorerEnabled();
+                UpdateLocationEnabled();
                 Logger.Log($"Next wallpaper set: {next.Path}");
             })
             .ContinueWith(t =>
@@ -374,6 +388,47 @@ namespace WallpaperCycler
             }
         }
 
+        private void OnViewLocation(object? sender, EventArgs e)
+        {
+            if (string.IsNullOrEmpty(currentPath) || !File.Exists(currentPath)) return;
+
+            try
+            {
+                var gpsDir = ImageMetadataReader.ReadMetadata(currentPath)
+                    .OfType<MetadataExtractor.Formats.Exif.GpsDirectory>()
+                    .FirstOrDefault();
+
+                if (gpsDir == null)
+                {
+                    trayIcon.ShowBalloonTip(1500, "No location data", "This photo has no GPS metadata.", ToolTipIcon.Info);
+                    return;
+                }
+
+                double? lat = GetCoordinate(gpsDir, GpsDirectory.TagLatitude, GpsDirectory.TagLatitudeRef);
+                double? lon = GetCoordinate(gpsDir, GpsDirectory.TagLongitude, GpsDirectory.TagLongitudeRef);
+
+                if (lat == null || lon == null)
+                {
+                    trayIcon.ShowBalloonTip(1500, "No location data", "This photo has no GPS coordinates.", ToolTipIcon.Info);
+                    return;
+                }
+
+                string latStr = lat.Value.ToString("F6", System.Globalization.CultureInfo.InvariantCulture);
+                string lonStr = lon.Value.ToString("F6", System.Globalization.CultureInfo.InvariantCulture);
+                string url = $"https://www.google.com/maps/search/?api=1&query={latStr}%2C{lonStr}";
+
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                Logger.Log("Failed to open location: " + ex.Message);
+            }
+        }
+
 
         private void OnReset(object? sender, EventArgs e)
         {
@@ -385,6 +440,8 @@ namespace WallpaperCycler
                 currentPath = null;
                 currentOrdinal = -1;
                 UpdatePrevEnabled();
+                UpdateExplorerEnabled();
+                UpdateLocationEnabled();
                 Logger.Log("Reset seen photos");
             }
         }
@@ -467,6 +524,52 @@ namespace WallpaperCycler
             if (showInExplorerItem != null)
                 showInExplorerItem.Enabled = !string.IsNullOrEmpty(currentPath) && File.Exists(currentPath);
 
+        }
+
+        private void UpdateLocationEnabled()
+        {
+            var locItem = trayMenu.Items.Find("location", false).FirstOrDefault() as ToolStripMenuItem;
+            if (locItem == null || string.IsNullOrEmpty(currentPath)) return;
+
+            try
+            {
+                var gpsDir = ImageMetadataReader.ReadMetadata(currentPath)
+                    .OfType<MetadataExtractor.Formats.Exif.GpsDirectory>()
+                    .FirstOrDefault();
+
+                bool hasGps = gpsDir != null &&
+                              gpsDir.GetRationalArray(GpsDirectory.TagLatitude) != null &&
+                              gpsDir.GetRationalArray(GpsDirectory.TagLongitude) != null;
+
+                locItem.Enabled = hasGps;
+            }
+            catch
+            {
+                locItem.Enabled = false;
+            }
+        }
+
+        /// <summary>
+        /// Converts EXIF GPS data to decimal degrees.
+        /// </summary>
+        private static double? GetCoordinate(GpsDirectory dir, int coordTag, int refTag)
+        {
+            var rationalValues = dir.GetRationalArray(coordTag);
+            var refValue = dir.GetString(refTag);
+
+            if (rationalValues == null || rationalValues.Length < 3)
+                return null;
+
+            double degrees = rationalValues[0].ToDouble();
+            double minutes = rationalValues[1].ToDouble();
+            double seconds = rationalValues[2].ToDouble();
+
+            double decimalDegrees = degrees + (minutes / 60.0) + (seconds / 3600.0);
+
+            if (refValue == "S" || refValue == "W")
+                decimalDegrees *= -1;
+
+            return decimalDegrees;
         }
 
         private void StartCycleTimer(int minutes)

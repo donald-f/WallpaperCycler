@@ -8,7 +8,10 @@
 		<ApplicationIcon>app.ico</ApplicationIcon>
 	</PropertyGroup>
 	<ItemGroup>
+		<PackageReference Include="GeoTimeZone" Version="6.1.0" />
+		<PackageReference Include="MetadataExtractor" Version="2.9.0" />
 		<PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
+		<PackageReference Include="TimeZoneConverter" Version="7.2.0" />
 	</ItemGroup>
 	<ItemGroup>
 		<None Include="app.ico" />
