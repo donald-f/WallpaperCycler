@@ -173,38 +173,62 @@ namespace WallpaperCycler
         private void OnPrevious(object? sender, EventArgs e)
         {
             if (currentOrdinal <= 0) return;
-            var prev = db.GetBySeenOrdinal(currentOrdinal - 1);
-            if (prev != null && File.Exists(prev.Path))
+
+            int checkOrdinal = currentOrdinal - 1;
+
+            while (checkOrdinal >= 0)
             {
-                currentPath = prev.Path;
-                currentOrdinal = prev.SeenOrdinal;
-                wallpaperService.SetWallpaperWithBackground(currentPath, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"));
-                db.SetSetting("LastShownPath", currentPath);
-                UpdatePrevEnabled();
-                Logger.Log($"Previous wallpaper: {currentPath}");
+                var prev = db.GetBySeenOrdinal(checkOrdinal);
+                if (prev == null)
+                {
+                    checkOrdinal--;
+                    continue;
+                }
+
+                if (File.Exists(prev.Path))
+                {
+                    currentPath = prev.Path;
+                    currentOrdinal = prev.SeenOrdinal;
+                    wallpaperService.SetWallpaperWithBackground(currentPath, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"));
+                    db.SetSetting("LastShownPath", currentPath);
+                    UpdatePrevEnabled();
+                    UpdateExplorerEnabled();
+                    Logger.Log($"Previous wallpaper: {currentPath}");
+                    return;
+                }
+
+                // Missing file: remove from DB and continue
+                db.DeletePath(prev.Path);
+                Logger.Log($"Removed missing previous file: {prev.Path}");
+                checkOrdinal--;
             }
-            else
-            {
-                // out of sync, attempt cleanup
-                db.DeleteMissingPaths();
-                trayIcon.ShowBalloonTip(1500, "Previous unavailable", "Could not go back further.", ToolTipIcon.Info);
-                UpdatePrevEnabled();
-                UpdateExplorerEnabled();
-            }
+
+            trayIcon.ShowBalloonTip(1500, "Previous unavailable", "Could not go back further.", ToolTipIcon.Info);
+            UpdatePrevEnabled();
+            UpdateExplorerEnabled();
         }
+
 
         private void OnNext(object? sender, EventArgs e)
         {
             bool needFolderSelection = false;
+            int checkOrdinal = currentOrdinal + 1;
+            int maxOrdinal = db.GetMaxSeenOrdinal();
 
-            var possibleNext = db.GetBySeenOrdinal(currentOrdinal + 1);
-
-            while (possibleNext != null)
+            // Try to move forward through already seen images first
+            while (checkOrdinal <= maxOrdinal)
             {
-                if (File.Exists(possibleNext.Path))
+                var nextSeen = db.GetBySeenOrdinal(checkOrdinal);
+                if (nextSeen == null)
                 {
-                    currentPath = possibleNext.Path;
-                    currentOrdinal = possibleNext.SeenOrdinal;
+                    checkOrdinal++;
+                    continue;
+                }
+
+                if (File.Exists(nextSeen.Path))
+                {
+                    currentPath = nextSeen.Path;
+                    currentOrdinal = nextSeen.SeenOrdinal;
                     wallpaperService.SetWallpaperWithBackground(currentPath, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"));
                     db.SetSetting("LastShownPath", currentPath);
                     UpdatePrevEnabled();
@@ -212,14 +236,13 @@ namespace WallpaperCycler
                     Logger.Log($"Next wallpaper (sequential): {currentPath}");
                     return;
                 }
-                else
-                {
-                    // Missing file, remove from DB and continue searching
-                    db.DeletePath(possibleNext.Path);
-                }
-                possibleNext = db.GetBySeenOrdinal(currentOrdinal + 1);
+
+                db.DeletePath(nextSeen.Path);
+                Logger.Log($"Removed missing next file: {nextSeen.Path}");
+                checkOrdinal++;
             }
 
+            // If no more "seen" images available, get a random unseen one
             Task.Run(() =>
             {
                 var next = db.GetRandomUnseen();
@@ -257,7 +280,6 @@ namespace WallpaperCycler
             })
             .ContinueWith(t =>
             {
-                // Back on UI thread
                 if (needFolderSelection)
                 {
                     if (MessageBox.Show(
@@ -274,9 +296,8 @@ namespace WallpaperCycler
                         }
                     }
                 }
-            }, TaskScheduler.FromCurrentSynchronizationContext());  // ensures UI thread
+            }, TaskScheduler.FromCurrentSynchronizationContext());
         }
-
 
         private void OnDelete(object? sender, EventArgs e)
         {
