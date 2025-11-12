@@ -197,6 +197,29 @@ namespace WallpaperCycler
         {
             bool needFolderSelection = false;
 
+            var possibleNext = db.GetBySeenOrdinal(currentOrdinal + 1);
+
+            while (possibleNext != null)
+            {
+                if (File.Exists(possibleNext.Path))
+                {
+                    currentPath = possibleNext.Path;
+                    currentOrdinal = possibleNext.SeenOrdinal;
+                    wallpaperService.SetWallpaperWithBackground(currentPath, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"));
+                    db.SetSetting("LastShownPath", currentPath);
+                    UpdatePrevEnabled();
+                    UpdateExplorerEnabled();
+                    Logger.Log($"Next wallpaper (sequential): {currentPath}");
+                    return;
+                }
+                else
+                {
+                    // Missing file, remove from DB and continue searching
+                    db.DeletePath(possibleNext.Path);
+                }
+                possibleNext = db.GetBySeenOrdinal(currentOrdinal + 1);
+            }
+
             Task.Run(() =>
             {
                 var next = db.GetRandomUnseen();
