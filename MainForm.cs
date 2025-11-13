@@ -53,7 +53,7 @@ namespace WallpaperCycler
                 {
                     currentPath = lastShown;
                     currentOrdinal = db.GetSeenOrdinalForPath(lastShown);
-                    wallpaperService.SetWallpaperWithBackground(currentPath, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"));
+                    wallpaperService.SetWallpaperWithBackground(currentPath, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"), db.Settings.ShowDateOnWallpaper);
                     Logger.Log($"Resumed wallpaper: {currentPath}");
                 }
                 catch (Exception ex)
@@ -149,7 +149,7 @@ namespace WallpaperCycler
                     db.SetSetting("LastShownPath", currentPath);
 
                     var fillColor = db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff");
-                    wallpaperService.SetWallpaperWithBackground(next.Path, fillColor);
+                    wallpaperService.SetWallpaperWithBackground(next.Path, fillColor, db.Settings.ShowDateOnWallpaper);
 
                     UpdatePrevEnabled();
                     UpdateExplorerEnabled();
@@ -199,7 +199,7 @@ namespace WallpaperCycler
                 {
                     currentPath = prev.Path;
                     currentOrdinal = prev.SeenOrdinal;
-                    wallpaperService.SetWallpaperWithBackground(currentPath, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"));
+                    wallpaperService.SetWallpaperWithBackground(currentPath, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"), db.Settings.ShowDateOnWallpaper);
                     db.SetSetting("LastShownPath", currentPath);
                     UpdatePrevEnabled();
                     UpdateExplorerEnabled();
@@ -241,7 +241,7 @@ namespace WallpaperCycler
                 {
                     currentPath = nextSeen.Path;
                     currentOrdinal = nextSeen.SeenOrdinal;
-                    wallpaperService.SetWallpaperWithBackground(currentPath, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"));
+                    wallpaperService.SetWallpaperWithBackground(currentPath, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"), db.Settings.ShowDateOnWallpaper);
                     db.SetSetting("LastShownPath", currentPath);
                     UpdatePrevEnabled();
                     UpdateExplorerEnabled();
@@ -284,7 +284,8 @@ namespace WallpaperCycler
 
                 wallpaperService.SetWallpaperWithBackground(
                     next.Path,
-                    db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff")
+                    db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"),
+                    db.Settings.ShowDateOnWallpaper
                 );
 
                 UpdatePrevEnabled();
@@ -463,7 +464,7 @@ namespace WallpaperCycler
                 // Immediately apply new fill color
                 if (!string.IsNullOrEmpty(currentPath) && File.Exists(currentPath))
                 {
-                    wallpaperService.SetWallpaperWithBackground(currentPath, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"));
+                    wallpaperService.SetWallpaperWithBackground(currentPath, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"), db.Settings.ShowDateOnWallpaper);
                     Logger.Log("Recomposed current wallpaper with new fill color");
                 }
 

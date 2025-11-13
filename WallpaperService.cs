@@ -1,4 +1,4 @@
-using Microsoft.Win32;
+﻿using Microsoft.Win32;
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -81,7 +81,7 @@ namespace WallpaperCycler
                         break;
                 }
 
-                // Remove the EXIF orientation tag so it won�t be reapplied or cause confusion later
+                // Remove the EXIF orientation tag so it won’t be reapplied or cause confusion later
                 img.RemovePropertyItem(ExifOrientationId);
             }
             catch
@@ -138,13 +138,23 @@ namespace WallpaperCycler
             string text = dt.ToString("MMMM d, yyyy");
             using var font = new Font("Segoe UI", 28, FontStyle.Bold);
             var size = g.MeasureString(text, font);
-            var rect = new RectangleF(width - size.Width - 30, height - size.Height - 30, size.Width + 20, size.Height + 10);
 
-            using var bgBrush = new SolidBrush(Color.FromArgb(160, 0, 0, 0)); // semi-transparent dark
+            const int margin = 30;
+            const int taskbarOffset = 80; // ← Move text up this much
+
+            var rect = new RectangleF(
+                width - size.Width - margin,
+                height - size.Height - margin - taskbarOffset,
+                size.Width + 20,
+                size.Height + 10
+            );
+
+            using var bgBrush = new SolidBrush(Color.FromArgb(160, 0, 0, 0));
             g.FillRectangle(bgBrush, rect);
-            using var textBrush = new SolidBrush(Color.FromArgb(240, 255, 255, 255)); // off-white
+            using var textBrush = new SolidBrush(Color.FromArgb(240, 255, 255, 255));
             g.DrawString(text, font, textBrush, rect.Left + 10, rect.Top + 5);
         }
+
 
     }
 }
