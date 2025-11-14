@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS AppSettings (
 
         public void InitialScan(string folder)
         {
-            var exts = new[] { ".jpg", ".jpeg", ".png", ".bmp" };
+            var exts = new[] { ".jpg", ".jpeg", ".png", ".bmp"};
             var files = Directory.EnumerateFiles(folder, "*.*", SearchOption.AllDirectories)
                 .Where(f => exts.Contains(Path.GetExtension(f).ToLowerInvariant()));
 

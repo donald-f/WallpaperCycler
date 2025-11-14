@@ -107,7 +107,7 @@ namespace WallpaperCycler
             trayIcon.Visible = true;
             trayIcon.DoubleClick += (s, e) => OnNext(s, e);
         }
-
+        
         private void InitializeTimer()
         {
             cycleTimer = new System.Windows.Forms.Timer();
@@ -154,6 +154,7 @@ namespace WallpaperCycler
                     UpdatePrevEnabled();
                     UpdateExplorerEnabled();
                     UpdateLocationEnabled();
+                    ResetCycleTimer();
 
                     Logger.Log($"Initial wallpaper set: {next.Path}");
                 }
@@ -182,6 +183,8 @@ namespace WallpaperCycler
 
         private void OnPrevious(object? sender, EventArgs e)
         {
+            cycleTimer.Stop();
+
             if (currentOrdinal <= 0) return;
 
             int checkOrdinal = currentOrdinal - 1;
@@ -205,6 +208,7 @@ namespace WallpaperCycler
                     UpdateExplorerEnabled();
                     UpdateLocationEnabled();
                     Logger.Log($"Previous wallpaper: {currentPath}");
+                    ResetCycleTimer();
                     return;
                 }
 
@@ -223,6 +227,9 @@ namespace WallpaperCycler
 
         private void OnNext(object? sender, EventArgs e)
         {
+
+            cycleTimer.Stop();
+
             bool needFolderSelection = false;
             int checkOrdinal = currentOrdinal + 1;
             int maxOrdinal = db.GetMaxSeenOrdinal();
@@ -247,6 +254,7 @@ namespace WallpaperCycler
                     UpdateExplorerEnabled();
                     UpdateLocationEnabled();
                     Logger.Log($"Next wallpaper (sequential): {currentPath}");
+                    ResetCycleTimer();
                     return;
                 }
 
@@ -316,10 +324,12 @@ namespace WallpaperCycler
 
         private void OnDelete(object? sender, EventArgs e)
         {
+            cycleTimer.Stop();
             if (currentPath == null)
             {
                 trayIcon.ShowBalloonTip(2000, "No images selected",
                             "No file is currently selected to delete.", ToolTipIcon.Warning);
+                cycleTimer.Start();
                 return;
             }
 
@@ -355,11 +365,13 @@ namespace WallpaperCycler
                         Logger.Log($"Deleted metadata JSON: {jsonPath}");
                     }
 
+                    cycleTimer.Start();
                     // Advance to next unseen
                     OnNext(this, EventArgs.Empty);
                 }
                 catch (Exception ex)
                 {
+                    cycleTimer.Start();
                     MessageBox.Show("Failed to delete file: " + ex.Message);
                     Logger.Log("Failed to delete file: " + ex.Message);
                 }
@@ -513,6 +525,7 @@ namespace WallpaperCycler
                 IncludeSubdirectories = true,
                 EnableRaisingEvents = true
             };
+            watcher.NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName;
             watcher.Created += (s, e) => { db.HandleFileCreated(e.FullPath); Logger.Log($"File created: {e.FullPath}"); };
             watcher.Deleted += (s, e) => { db.HandleFileDeleted(e.FullPath); Logger.Log($"File deleted: {e.FullPath}"); };
             watcher.Renamed += (s, e) => { db.HandleFileDeleted(e.OldFullPath); db.HandleFileCreated(e.FullPath); Logger.Log($"File renamed: {e.OldFullPath} -> {e.FullPath}"); };
@@ -585,5 +598,16 @@ namespace WallpaperCycler
             cycleTimer.Stop();
             Logger.Log("Cycle timer stopped");
         }
+
+        private void ResetCycleTimer()
+        {
+            if (db.Settings.CycleMinutes <= 0)
+                return;
+
+            cycleTimer.Stop();
+            cycleTimer.Interval = db.Settings.CycleMinutes * 60 * 1000;
+            cycleTimer.Start();
+        }
+
     }
 }
