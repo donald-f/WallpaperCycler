@@ -47,6 +47,7 @@ namespace WallpaperCycler
 
             // Resume last shown wallpaper silently
             var lastShown = db.GetSetting("LastShownPath");
+            
             if (!string.IsNullOrEmpty(lastShown) && File.Exists(lastShown))
             {
                 try
@@ -67,6 +68,10 @@ namespace WallpaperCycler
             {
                 StartCycleTimer(db.Settings.CycleMinutes);
             }
+
+            UpdatePrevEnabled();
+            UpdateExplorerEnabled();
+            UpdateLocationEnabled();
 
             // Sync autostart flag with actual state
             //bool isAuto = StartupManager.IsAutostartEnabled();
@@ -467,6 +472,7 @@ namespace WallpaperCycler
                 db.Settings = s.Settings;
                 db.SetSetting("FillColor", ColorTranslator.ToHtml(db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff")));
                 //db.SetSetting("Autostart", db.Settings.Autostart ? "true" : "false");
+                db.SetSetting("ShowDateOnWallpaper", db.Settings.ShowDateOnWallpaper ? "true" : "false");
                 db.SetSetting("CycleMinutes", db.Settings.CycleMinutes.ToString());
                 Logger.Log("Settings saved");
 

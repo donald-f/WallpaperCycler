@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS AppSettings (
                 SetSetting("CycleMinutes", "0");
                 SetSetting("LastShownPath", "");
                 SetSetting("LastSelectedFolder", "");
+                SetSetting("ShowDateOnWallpaper", "false");
             }
             LoadSettings();
         }
@@ -97,6 +98,8 @@ CREATE TABLE IF NOT EXISTS AppSettings (
             }
             //var a = GetSetting("Autostart");
             //if (!string.IsNullOrEmpty(a)) Settings.Autostart = bool.Parse(a);
+            var s = GetSetting("ShowDateOnWallpaper");
+            if (!string.IsNullOrEmpty(s)) Settings.ShowDateOnWallpaper = bool.Parse(s);
             var t = GetSetting("CycleMinutes");
             if (!string.IsNullOrEmpty(t)) Settings.CycleMinutes = int.Parse(t);
         }
