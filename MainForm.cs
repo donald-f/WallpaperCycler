@@ -305,6 +305,7 @@ namespace WallpaperCycler
                 UpdateExplorerEnabled();
                 UpdateLocationEnabled();
                 Logger.Log($"Next wallpaper set: {next.Path}");
+                ResetCycleTimer();
             })
             .ContinueWith(t =>
             {
