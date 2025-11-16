@@ -609,10 +609,14 @@ namespace WallpaperCycler
         private void ResetCycleTimer()
         {
             if (db.Settings.CycleMinutes <= 0)
-                return;
+            {
+                Logger.Log($"ResetCycleTimer called but cycle minutes <= 0. Cycle minutes: {db.Settings.CycleMinutes}");
 
+                return;
+            }
             cycleTimer.Stop();
             cycleTimer.Interval = db.Settings.CycleMinutes * 60 * 1000;
+            Logger.Log($"Resetting cycle timer. {db.Settings.CycleMinutes}");
             cycleTimer.Start();
         }
 
