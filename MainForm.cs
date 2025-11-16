@@ -112,11 +112,17 @@ namespace WallpaperCycler
             trayIcon.Visible = true;
             trayIcon.DoubleClick += (s, e) => OnNext(s, e);
         }
-        
+
         private void InitializeTimer()
         {
             cycleTimer = new System.Windows.Forms.Timer();
-            cycleTimer.Tick += (s, e) => OnNext(s, EventArgs.Empty);
+            cycleTimer.Tick += CycleTimer_Tick;
+        }
+
+        private void CycleTimer_Tick(object? sender, EventArgs e)
+        {
+            Logger.Log("Timer tick fired");
+            OnNext(sender, EventArgs.Empty);
         }
 
         private void OnSelectFolder(object? sender, EventArgs e)
@@ -159,7 +165,6 @@ namespace WallpaperCycler
                     UpdatePrevEnabled();
                     UpdateExplorerEnabled();
                     UpdateLocationEnabled();
-                    ResetCycleTimer();
 
                     Logger.Log($"Initial wallpaper set: {next.Path}");
                 }
@@ -183,6 +188,7 @@ namespace WallpaperCycler
                     Logger.Log($"No images found in folder: {selectedFolder}. Applied solid fill background.");
                 }
             });
+            ResetCycleTimer();
         }
 
 
@@ -305,7 +311,6 @@ namespace WallpaperCycler
                 UpdateExplorerEnabled();
                 UpdateLocationEnabled();
                 Logger.Log($"Next wallpaper set: {next.Path}");
-                ResetCycleTimer();
             })
             .ContinueWith(t =>
             {
@@ -326,6 +331,7 @@ namespace WallpaperCycler
                     }
                 }
             }, TaskScheduler.FromCurrentSynchronizationContext());
+            ResetCycleTimer();
         }
 
         private void OnDelete(object? sender, EventArgs e)
