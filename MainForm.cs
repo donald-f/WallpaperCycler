@@ -616,7 +616,7 @@ namespace WallpaperCycler
             }
             cycleTimer.Stop();
             cycleTimer.Interval = db.Settings.CycleMinutes * 60 * 1000;
-            Logger.Log($"Resetting cycle timer. {db.Settings.CycleMinutes}");
+            Logger.Log($"Resetting cycle timer. {db.Settings.CycleMinutes} minutes");
             cycleTimer.Start();
         }
 
