@@ -36,7 +36,7 @@ namespace WallpaperCycler
 
             var cycleLabel = new Label { Text = "Cycle interval:", Left = 10, Top = 95 };
             cycleCombo = new ComboBox { Left = 140, Top = 92, Width = 170, DropDownStyle = ComboBoxStyle.DropDownList };
-            cycleCombo.Items.AddRange(new object[] { "Off", "10 minutes", "20 minutes", "30 minutes", "60 minutes" });
+            cycleCombo.Items.AddRange(new object[] { "Off", "5 minutes", "10 minutes", "20 minutes", "30 minutes", "60 minutes" });
             cycleCombo.SelectedIndex = IndexForMinutes(settings.CycleMinutes);
 
             var ok = new Button { Text = "OK", DialogResult = DialogResult.OK, Left = 140, Top = 150 };
@@ -51,10 +51,11 @@ namespace WallpaperCycler
         {
             return minutes switch
             {
-                10 => 1,
-                20 => 2,
-                30 => 3,
-                60 => 4,
+                5 => 1,
+                10 => 2,
+                20 => 3,
+                30 => 4,
+                60 => 5,
                 _ => 0
             };
         }
@@ -63,10 +64,11 @@ namespace WallpaperCycler
         {
             return idx switch
             {
-                1 => 10,
-                2 => 20,
-                3 => 30,
-                4 => 60,
+                1 => 5,
+                2 => 10,
+                3 => 20,
+                4 => 30,
+                5 => 60,
                 _ => 0
             };
         }
