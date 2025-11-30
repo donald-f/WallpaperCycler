@@ -23,6 +23,18 @@ namespace WallpaperCycler
         private int currentOrdinal = -1;
         private FileSystemWatcher? watcher;
         private System.Windows.Forms.Timer cycleTimer;
+        private static readonly HashSet<string> ValidExtensions =
+             new(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".bmp" };
+
+        // temp/junk patterns to ignore
+        private static readonly string[] IgnoredPatterns =
+        {
+            ".tmp",
+            "~",
+            ".~tmp",
+            "~rf",
+            "~mg",
+        };
 
         public MainForm()
         {
@@ -529,6 +541,22 @@ namespace WallpaperCycler
             }
         }
 
+        private bool IsRealPhotoFile(string path)
+        {
+            string ext = Path.GetExtension(path).ToLowerInvariant();
+            string file = Path.GetFileName(path).ToLowerInvariant();
+
+            if (!ValidExtensions.Contains(ext))
+                return false;
+
+            // ignore junk files
+            foreach (var p in IgnoredPatterns)
+                if (file.Contains(p))
+                    return false;
+
+            return true;
+        }
+
         private void SetupWatcher()
         {
             watcher?.Dispose();
@@ -539,9 +567,48 @@ namespace WallpaperCycler
                 EnableRaisingEvents = true
             };
             watcher.NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName;
-            watcher.Created += (s, e) => { db.HandleFileCreated(e.FullPath); Logger.Log($"File created: {e.FullPath}"); };
-            watcher.Deleted += (s, e) => { db.HandleFileDeleted(e.FullPath); Logger.Log($"File deleted: {e.FullPath}"); };
-            watcher.Renamed += (s, e) => { db.HandleFileDeleted(e.OldFullPath); db.HandleFileCreated(e.FullPath); Logger.Log($"File renamed: {e.OldFullPath} -> {e.FullPath}"); };
+            watcher.Created += (s, e) =>
+            {
+                if (IsRealPhotoFile(e.FullPath))
+                {
+                    db.HandleFileCreated(e.FullPath);
+                    Logger.Log($"Real file created: {e.FullPath}");
+                }
+            };
+
+            watcher.Deleted += (s, e) =>
+            {
+                if (IsRealPhotoFile(e.FullPath))
+                {
+                    db.HandleFileDeleted(e.FullPath);
+                    Logger.Log($"Real file deleted: {e.FullPath}");
+                }
+            };
+
+            watcher.Renamed += (s, e) =>
+            {
+                if (!IsRealPhotoFile(e.OldFullPath) && !IsRealPhotoFile(e.FullPath))
+                {
+                    return;
+                }
+                else if (IsRealPhotoFile(e.OldFullPath) && !IsRealPhotoFile(e.FullPath))
+                {
+                    return;
+                }
+                else if (!IsRealPhotoFile(e.OldFullPath) && IsRealPhotoFile(e.FullPath))
+                {
+                    db.HandleFileCreated(e.FullPath);
+                    wallpaperService.SetWallpaperWithBackground(e.FullPath, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"), db.Settings.ShowDateOnWallpaper);
+                    Logger.Log($"Real file finalized and background refreshed: {e.FullPath}");
+                    return;
+                }
+                else // Real → Real
+                {
+                    db.HandleFileDeleted(e.OldFullPath);
+                    db.HandleFileCreated(e.FullPath);
+                    Logger.Log($"Real file renamed: {e.OldFullPath} -> {e.FullPath}");
+                }
+            };
         }
 
         private void UpdateExplorerEnabled()
