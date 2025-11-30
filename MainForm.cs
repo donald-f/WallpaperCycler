@@ -25,6 +25,7 @@ namespace WallpaperCycler
         private System.Windows.Forms.Timer cycleTimer;
         private static readonly HashSet<string> ValidExtensions =
              new(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".bmp" };
+        private RapidPanelForm? rapidPanel;
 
         // temp/junk patterns to ignore
         private static readonly string[] IgnoredPatterns =
@@ -113,6 +114,7 @@ namespace WallpaperCycler
             };
             trayMenu.Items.Add(locItem);
             trayMenu.Items.Add("Reset Seen Photos", null, OnReset);
+            trayMenu.Items.Insert(0, new ToolStripMenuItem("Open Rapid Panel", null, OnOpenRapidPanel));
             trayMenu.Items.Add(new ToolStripSeparator());
             trayMenu.Items.Add("Settings", null, OnSettings);
             trayMenu.Items.Add("Exit", null, OnExit);
@@ -623,10 +625,48 @@ namespace WallpaperCycler
         private void UpdateLocationEnabled()
         {
             var locItem = trayMenu.Items.Find("location", false).FirstOrDefault() as ToolStripMenuItem;
-            if (locItem == null || string.IsNullOrEmpty(currentPath)) return;
+            if (locItem == null)
+                return;
+
+            bool canView = false;
 
             try
             {
+                // Use the thread-safe helper to determine availability
+                canView = IsViewLocationAvailable();
+            }
+            catch
+            {
+                canView = false;
+            }
+
+            // Ensure we update the menu on the UI thread
+            if (trayMenu.InvokeRequired)
+            {
+                trayMenu.BeginInvoke(new Action(() => locItem.Enabled = canView));
+            }
+            else
+            {
+                locItem.Enabled = canView;
+            }
+        }
+
+        /// <summary>
+        /// Thread-safe check whether the current photo has GPS coordinates and can show location.
+        /// Safe to call from any thread.
+        /// </summary>
+        public bool IsViewLocationAvailable()
+        {
+            if (this.InvokeRequired)
+            {
+                return (bool)this.Invoke(new Func<bool>(IsViewLocationAvailable));
+            }
+
+            try
+            {
+                if (string.IsNullOrEmpty(currentPath) || !File.Exists(currentPath))
+                    return false;
+
                 var gpsDir = ImageMetadataReader.ReadMetadata(currentPath)
                     .OfType<MetadataExtractor.Formats.Exif.GpsDirectory>()
                     .FirstOrDefault();
@@ -635,11 +675,11 @@ namespace WallpaperCycler
                               gpsDir.GetRationalArray(GpsDirectory.TagLatitude) != null &&
                               gpsDir.GetRationalArray(GpsDirectory.TagLongitude) != null;
 
-                locItem.Enabled = hasGps;
+                return hasGps;
             }
             catch
             {
-                locItem.Enabled = false;
+                return false;
             }
         }
 
@@ -664,6 +704,19 @@ namespace WallpaperCycler
                 decimalDegrees *= -1;
 
             return decimalDegrees;
+        }
+
+        private void OnOpenRapidPanel(object? sender, EventArgs e)
+        {
+            if (rapidPanel == null || rapidPanel.IsDisposed)
+            {
+                rapidPanel = new RapidPanelForm(this);
+                rapidPanel.Show();
+            }
+            else
+            {
+                rapidPanel.Focus();
+            }
         }
 
         private void StartCycleTimer(int minutes)
