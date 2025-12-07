@@ -360,7 +360,7 @@ namespace WallpaperCycler
             }
 
             var confirm = MessageBox.Show(
-                $"Delete this photo and its metadata (if present) and send to Recycle Bin?\n{currentPath}",
+                $"Delete this photo and its metadata and live video (if present) and send to Recycle Bin?\n{currentPath}",
                 "Confirm Delete",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Warning
@@ -370,15 +370,6 @@ namespace WallpaperCycler
             {
                 try
                 {
-                    // Delete the main image
-                    Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(
-                        currentPath,
-                        Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
-                        Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin
-                    );
-                    Logger.Log($"Deleted photo: {currentPath}");
-                    db.DeletePath(currentPath);
-
                     // Delete the associated JSON file if it exists
                     string jsonPath = currentPath + ".supplemental-metadata.json";
                     if (File.Exists(jsonPath))
@@ -390,6 +381,34 @@ namespace WallpaperCycler
                         );
                         Logger.Log($"Deleted metadata JSON: {jsonPath}");
                     }
+
+                    // Attempt to delete possible live photo video
+                    string videoCandidateMp4 = Path.ChangeExtension(currentPath, ".mp4");
+                    string videoCandidateMov = Path.ChangeExtension(currentPath, ".mov");
+
+                    if (File.Exists(videoCandidateMp4) && LivePhotoHelpers.IsLikelyLivePhotoVideo(currentPath, videoCandidateMp4))
+                    {
+                        Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(videoCandidateMp4, Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs, Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
+                        Logger.Log($"Deleted associated live photo video: {videoCandidateMp4}");
+                    }
+                    else if (File.Exists(videoCandidateMov) && LivePhotoHelpers.IsLikelyLivePhotoVideo(currentPath, videoCandidateMov))
+                    {
+                        Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(videoCandidateMov, Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs, Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin);
+                        Logger.Log($"Deleted associated live photo video: {videoCandidateMov}");
+                    }
+                    else
+                    {
+                        Logger.Log($"No matching live video to delete for {currentPath}");
+                    }
+
+                    // Delete the main image
+                    Microsoft.VisualBasic.FileIO.FileSystem.DeleteFile(
+                        currentPath,
+                        Microsoft.VisualBasic.FileIO.UIOption.OnlyErrorDialogs,
+                        Microsoft.VisualBasic.FileIO.RecycleOption.SendToRecycleBin
+                    );
+                    Logger.Log($"Deleted photo: {currentPath}");
+                    db.DeletePath(currentPath);
 
                     cycleTimer.Start();
                     // Advance to next unseen
@@ -403,7 +422,6 @@ namespace WallpaperCycler
                 }
             }
         }
-
 
         private void OnShowInExplorer(object? sender, EventArgs e)
         {
