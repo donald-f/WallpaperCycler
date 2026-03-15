@@ -67,6 +67,7 @@ namespace WallpaperCycler
                 {
                     currentPath = lastShown;
                     currentOrdinal = db.GetSeenOrdinalForPath(lastShown);
+                    LogOrdinalProgress("Setting wallpaper");
                     wallpaperService.SetWallpaperWithBackground(currentPath, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"), db.Settings.ShowDateOnWallpaper);
                     Logger.Log($"Resumed wallpaper: {currentPath}");
                 }
@@ -174,6 +175,8 @@ namespace WallpaperCycler
                     db.SetSetting("LastShownPath", currentPath);
 
                     var fillColor = db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff");
+
+                    LogOrdinalProgress("Setting wallpaper");
                     wallpaperService.SetWallpaperWithBackground(next.Path, fillColor, db.Settings.ShowDateOnWallpaper);
 
                     UpdatePrevEnabled();
@@ -227,6 +230,7 @@ namespace WallpaperCycler
                 {
                     currentPath = prev.Path;
                     currentOrdinal = prev.SeenOrdinal;
+                    LogOrdinalProgress("Setting wallpaper");
                     wallpaperService.SetWallpaperWithBackground(currentPath, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"), db.Settings.ShowDateOnWallpaper);
                     db.SetSetting("LastShownPath", currentPath);
                     UpdatePrevEnabled();
@@ -273,6 +277,7 @@ namespace WallpaperCycler
                 {
                     currentPath = nextSeen.Path;
                     currentOrdinal = nextSeen.SeenOrdinal;
+                    LogOrdinalProgress("Setting wallpaper");
                     wallpaperService.SetWallpaperWithBackground(currentPath, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"), db.Settings.ShowDateOnWallpaper);
                     db.SetSetting("LastShownPath", currentPath);
                     UpdatePrevEnabled();
@@ -315,6 +320,7 @@ namespace WallpaperCycler
                 currentOrdinal = newOrdinal;
                 db.SetSetting("LastShownPath", currentPath);
 
+                LogOrdinalProgress("Setting wallpaper");
                 wallpaperService.SetWallpaperWithBackground(
                     next.Path,
                     db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"),
@@ -521,6 +527,7 @@ namespace WallpaperCycler
                 // Immediately apply new fill color
                 if (!string.IsNullOrEmpty(currentPath) && File.Exists(currentPath))
                 {
+                    LogOrdinalProgress("Setting wallpaper");
                     wallpaperService.SetWallpaperWithBackground(currentPath, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"), db.Settings.ShowDateOnWallpaper);
                     Logger.Log("Recomposed current wallpaper with new fill color");
                 }
@@ -618,6 +625,7 @@ namespace WallpaperCycler
                 else if (!IsRealPhotoFile(e.OldFullPath) && IsRealPhotoFile(e.FullPath))
                 {
                     db.HandleFileCreated(e.FullPath);
+                    LogOrdinalProgress("Setting wallpaper");
                     wallpaperService.SetWallpaperWithBackground(e.FullPath, db.Settings.FillColor ?? ColorTranslator.FromHtml("#0b5fff"), db.Settings.ShowDateOnWallpaper);
                     Logger.Log($"Real file finalized and background refreshed: {e.FullPath}");
                     return;
@@ -736,6 +744,26 @@ namespace WallpaperCycler
                 rapidPanel.Focus();
             }
         }
+
+        private void LogOrdinalProgress(string context)
+        {
+            try
+            {
+                int total = db.GetCountOfAllRows() ?? 0;
+
+                // currentOrdinal is 0-based internally → log as 1-based
+                int humanOrdinal = currentOrdinal >= 0 ? currentOrdinal + 1 : 0;
+
+                Logger.Log(
+                    $"{context} — you are at ordinal {humanOrdinal} out of {total} pictures"
+                );
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Failed to log ordinal progress: {ex.Message}");
+            }
+        }
+
 
         private void StartCycleTimer(int minutes)
         {

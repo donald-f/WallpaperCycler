@@ -150,6 +150,17 @@ CREATE TABLE IF NOT EXISTS AppSettings (
             return null;
         }
 
+        public int? GetCountOfAllRows()
+        {
+            using var conn = new SqliteConnection(connString);
+            conn.Open();
+            var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM Photos";
+            using var r = cmd.ExecuteReader();
+            if (r.Read()) return r.GetInt32(0);
+            return null;
+        }
+
         public int GetMaxSeenOrdinal()
         {
             using var conn = new SqliteConnection(connString);
