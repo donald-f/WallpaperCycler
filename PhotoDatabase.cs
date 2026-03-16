@@ -1,193 +1,197 @@
 using Microsoft.Data.Sqlite;
 using System;
-using System.Collections.Generic;
-using System.Data;
 using System.IO;
-using System.Linq;
 
 namespace WallpaperCycler
 {
     public class SettingsModel
     {
-        public System.Drawing.Color? FillColor { get; set; } = System.Drawing.ColorTranslator.FromHtml("#0b5fff");
-        //public bool Autostart { get; set; } = true;
+        public Color? FillColor { get; set; } = AppConstants.DefaultFillColor;
         public int CycleMinutes { get; set; } = 0; // 0 = off
-        public bool ShowDateOnWallpaper { get; set; }
+        public bool ShowDateOnWallpaper { get; set; } = false;
     }
 
     public record PhotoRow(string Path, int SeenOrdinal, string ModifiedDate);
 
     public class PhotoDatabase
     {
-        private readonly string dbPath;
-        private readonly string connString;
+        private readonly string _connString;
+        private readonly string _dbPath;
+
         public SettingsModel Settings { get; set; } = new SettingsModel();
 
         public PhotoDatabase(string dbPath)
         {
-            this.dbPath = dbPath;
-            connString = new SqliteConnectionStringBuilder { DataSource = dbPath }.ToString();
+            _dbPath = dbPath;
+            _connString = new SqliteConnectionStringBuilder { DataSource = dbPath }.ToString();
             Initialize();
         }
 
         private void Initialize()
         {
-            var first = !File.Exists(dbPath);
-            using var conn = new SqliteConnection(connString);
-            conn.Open();
-            var cmd = conn.CreateCommand();
-            cmd.CommandText = @"
+            bool firstRun = !File.Exists(_dbPath);
+
+            using var conn = OpenConnection();
+
+            Execute(conn, @"
 CREATE TABLE IF NOT EXISTS Photos (
-    Path TEXT PRIMARY KEY,
-    SeenOrdinal INTEGER,
+    Path         TEXT PRIMARY KEY,
+    SeenOrdinal  INTEGER,
     ModifiedDate TEXT
-);
-";
-            cmd.ExecuteNonQuery();
+);");
 
-            // settings table (very small)
-            cmd.CommandText = @"
+            Execute(conn, @"
 CREATE TABLE IF NOT EXISTS AppSettings (
-    Key TEXT PRIMARY KEY,
+    Key   TEXT PRIMARY KEY,
     Value TEXT
-);
-";
-            cmd.ExecuteNonQuery();
+);");
 
-            if (first)
+            if (firstRun)
             {
-                // insert defaults
-                SetSetting("FillColor", "#0b5fff");
-                //SetSetting("Autostart", "true");
-                SetSetting("CycleMinutes", "0");
-                SetSetting("LastShownPath", "");
-                SetSetting("LastSelectedFolder", "");
-                SetSetting("ShowDateOnWallpaper", "false");
+                SetSettingCore(conn, "FillColor", ColorTranslator.ToHtml(AppConstants.DefaultFillColor));
+                SetSettingCore(conn, "CycleMinutes", "0");
+                SetSettingCore(conn, "ShowDateOnWallpaper", "false");
+                SetSettingCore(conn, "LastShownPath", string.Empty);
+                SetSettingCore(conn, "LastSelectedFolder", string.Empty);
             }
+
             LoadSettings();
         }
 
+        // ── Settings ────────────────────────────────────────────────────────────
+
         public void SetSetting(string key, string value)
         {
-            using var conn = new SqliteConnection(connString);
-            conn.Open();
-            var cmd = conn.CreateCommand();
-            cmd.CommandText = @"INSERT OR REPLACE INTO AppSettings (Key, Value) VALUES ($k, $v);";
-            cmd.Parameters.AddWithValue("$k", key);
-            cmd.Parameters.AddWithValue("$v", value);
-            cmd.ExecuteNonQuery();
+            using var conn = OpenConnection();
+            SetSettingCore(conn, key, value);
         }
 
         public string? GetSetting(string key)
         {
-            using var conn = new SqliteConnection(connString);
-            conn.Open();
-            var cmd = conn.CreateCommand();
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT Value FROM AppSettings WHERE Key = $k";
             cmd.Parameters.AddWithValue("$k", key);
-            var r = cmd.ExecuteScalar();
-            return r?.ToString();
+            return cmd.ExecuteScalar()?.ToString();
         }
 
         private void LoadSettings()
         {
-            var c = GetSetting("FillColor");
-            if (c != null && c != "")
+            var fillHex = GetSetting("FillColor");
+            if (!string.IsNullOrEmpty(fillHex))
             {
-                Settings.FillColor = System.Drawing.ColorTranslator.FromHtml(c);
+                try { Settings.FillColor = ColorTranslator.FromHtml(fillHex); }
+                catch (Exception ex) { Logger.Log($"Invalid FillColor in DB ('{fillHex}'): {ex.Message}"); }
             }
-            //var a = GetSetting("Autostart");
-            //if (!string.IsNullOrEmpty(a)) Settings.Autostart = bool.Parse(a);
-            var s = GetSetting("ShowDateOnWallpaper");
-            if (!string.IsNullOrEmpty(s)) Settings.ShowDateOnWallpaper = bool.Parse(s);
-            var t = GetSetting("CycleMinutes");
-            if (!string.IsNullOrEmpty(t)) Settings.CycleMinutes = int.Parse(t);
+
+            var showDate = GetSetting("ShowDateOnWallpaper");
+            if (!string.IsNullOrEmpty(showDate))
+            {
+                if (bool.TryParse(showDate, out var b)) Settings.ShowDateOnWallpaper = b;
+            }
+
+            var cycleStr = GetSetting("CycleMinutes");
+            if (!string.IsNullOrEmpty(cycleStr))
+            {
+                if (int.TryParse(cycleStr, out var minutes)) Settings.CycleMinutes = minutes;
+                else Logger.Log($"Invalid CycleMinutes in DB ('{cycleStr}')");
+            }
         }
+
+        // ── Photo rows ──────────────────────────────────────────────────────────
 
         public void InitialScan(string folder)
         {
-            var exts = new[] { ".jpg", ".jpeg", ".png", ".bmp"};
-            var files = Directory.EnumerateFiles(folder, "*.*", SearchOption.AllDirectories)
-                .Where(f => exts.Contains(Path.GetExtension(f).ToLowerInvariant()));
+            var files = Directory.EnumerateFiles(folder, "*.*", SearchOption.AllDirectories);
 
-            using var conn = new SqliteConnection(connString);
-            conn.Open();
+            using var conn = OpenConnection();
             using var tran = conn.BeginTransaction();
+
             foreach (var f in files)
             {
-                var cmd = conn.CreateCommand();
-                cmd.CommandText = "INSERT OR IGNORE INTO Photos (Path, SeenOrdinal, ModifiedDate) VALUES ($p, -1, $m);";
+                if (!AppConstants.ValidPhotoExtensions.Contains(Path.GetExtension(f)))
+                    continue;
+
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText =
+                    "INSERT OR IGNORE INTO Photos (Path, SeenOrdinal, ModifiedDate) VALUES ($p, -1, $m);";
                 cmd.Parameters.AddWithValue("$p", f);
                 cmd.Parameters.AddWithValue("$m", DateTime.UtcNow.ToString("o"));
                 cmd.ExecuteNonQuery();
             }
+
             tran.Commit();
         }
 
         public PhotoRow? GetRandomUnseen()
         {
-            using var conn = new SqliteConnection(connString);
-            conn.Open();
-            var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT Path, SeenOrdinal, ModifiedDate FROM Photos WHERE SeenOrdinal = -1 ORDER BY RANDOM() LIMIT 1";
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText =
+                "SELECT Path, SeenOrdinal, ModifiedDate FROM Photos WHERE SeenOrdinal = -1 ORDER BY RANDOM() LIMIT 1";
             using var r = cmd.ExecuteReader();
-            if (r.Read())
-            {
-                return new PhotoRow(r.GetString(0), r.GetInt32(1), r.GetString(2));
-            }
-            return null;
+            return r.Read() ? new PhotoRow(r.GetString(0), r.GetInt32(1), r.GetString(2)) : null;
         }
 
         public PhotoRow? GetBySeenOrdinal(int ordinal)
         {
-            using var conn = new SqliteConnection(connString);
-            conn.Open();
-            var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT Path, SeenOrdinal, ModifiedDate FROM Photos WHERE SeenOrdinal = $o LIMIT 1";
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText =
+                "SELECT Path, SeenOrdinal, ModifiedDate FROM Photos WHERE SeenOrdinal = $o LIMIT 1";
             cmd.Parameters.AddWithValue("$o", ordinal);
             using var r = cmd.ExecuteReader();
-            if (r.Read()) return new PhotoRow(r.GetString(0), r.GetInt32(1), r.GetString(2));
-            return null;
-        }
-
-        public int? GetCountOfAllRows()
-        {
-            using var conn = new SqliteConnection(connString);
-            conn.Open();
-            var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT COUNT(*) FROM Photos";
-            using var r = cmd.ExecuteReader();
-            if (r.Read()) return r.GetInt32(0);
-            return null;
+            return r.Read() ? new PhotoRow(r.GetString(0), r.GetInt32(1), r.GetString(2)) : null;
         }
 
         public int GetMaxSeenOrdinal()
         {
-            using var conn = new SqliteConnection(connString);
-            conn.Open();
-            var cmd = conn.CreateCommand();
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT COALESCE(MAX(SeenOrdinal), -1) FROM Photos";
-            var val = cmd.ExecuteScalar();
-            return Convert.ToInt32(val);
+            return Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
+        public int GetTotalPhotoCount()
+        {
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM Photos";
+            return Convert.ToInt32(cmd.ExecuteScalar());
+        }
+
+        public int GetSeenOrdinalForPath(string path)
+        {
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT SeenOrdinal FROM Photos WHERE Path = $p LIMIT 1";
+            cmd.Parameters.AddWithValue("$p", path);
+            var result = cmd.ExecuteScalar();
+            return result == null ? -1 : Convert.ToInt32(result);
         }
 
         public void MarkSeen(string path, int ordinal)
         {
-            using var conn = new SqliteConnection(connString);
-            conn.Open();
-            var cmd = conn.CreateCommand();
-            cmd.CommandText = "UPDATE Photos SET SeenOrdinal = $o, ModifiedDate = $m WHERE Path = $p";
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText =
+                "UPDATE Photos SET SeenOrdinal = $o, ModifiedDate = $m WHERE Path = $p";
             cmd.Parameters.AddWithValue("$o", ordinal);
             cmd.Parameters.AddWithValue("$m", DateTime.UtcNow.ToString("o"));
             cmd.Parameters.AddWithValue("$p", path);
             cmd.ExecuteNonQuery();
         }
 
+        public void ResetSeen()
+        {
+            using var conn = OpenConnection();
+            Execute(conn, "UPDATE Photos SET SeenOrdinal = -1");
+        }
+
         public void DeletePath(string path)
         {
-            using var conn = new SqliteConnection(connString);
-            conn.Open();
-            var cmd = conn.CreateCommand();
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
             cmd.CommandText = "DELETE FROM Photos WHERE Path = $p";
             cmd.Parameters.AddWithValue("$p", path);
             cmd.ExecuteNonQuery();
@@ -195,73 +199,50 @@ CREATE TABLE IF NOT EXISTS AppSettings (
 
         public void DeleteAllPaths()
         {
-            using var conn = new SqliteConnection(connString);
-            conn.Open();
-            var cmd = conn.CreateCommand();
-            cmd.CommandText = "DELETE FROM Photos";
-            cmd.ExecuteNonQuery();
-        }
-
-        public void DeleteMissingPaths()
-        {
-            using var conn = new SqliteConnection(connString);
-            conn.Open();
-            var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT Path FROM Photos";
-            using var r = cmd.ExecuteReader();
-            var toDelete = new List<string>();
-            while (r.Read())
-            {
-                var p = r.GetString(0);
-                if (!File.Exists(p)) toDelete.Add(p);
-            }
-            foreach (var d in toDelete) DeletePath(d);
-        }
-
-        //public void Rescan(string? root)
-        //{
-        //    if (string.IsNullOrEmpty(root) || !Directory.Exists(root)) return;
-        //    InitialScan(root);
-        //    DeleteMissingPaths();
-        //}
-
-        public void ResetSeen()
-        {
-            using var conn = new SqliteConnection(connString);
-            conn.Open();
-            var cmd = conn.CreateCommand();
-            cmd.CommandText = "UPDATE Photos SET SeenOrdinal = -1";
-            cmd.ExecuteNonQuery();
+            using var conn = OpenConnection();
+            Execute(conn, "DELETE FROM Photos");
         }
 
         public void HandleFileCreated(string path)
         {
-            var exts = new[] { ".jpg", ".jpeg", ".png", ".bmp" };
-            if (!exts.Contains(Path.GetExtension(path).ToLowerInvariant())) return;
-            using var conn = new SqliteConnection(connString);
-            conn.Open();
-            var cmd = conn.CreateCommand();
-            cmd.CommandText = "INSERT OR IGNORE INTO Photos (Path, SeenOrdinal, ModifiedDate) VALUES ($p, -1, $m);";
+            if (!AppConstants.ValidPhotoExtensions.Contains(Path.GetExtension(path)))
+                return;
+
+            using var conn = OpenConnection();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText =
+                "INSERT OR IGNORE INTO Photos (Path, SeenOrdinal, ModifiedDate) VALUES ($p, -1, $m);";
             cmd.Parameters.AddWithValue("$p", path);
             cmd.Parameters.AddWithValue("$m", DateTime.UtcNow.ToString("o"));
             cmd.ExecuteNonQuery();
         }
 
-        public void HandleFileDeleted(string path)
+        public void HandleFileDeleted(string path) => DeletePath(path);
+
+        // ── Helpers ─────────────────────────────────────────────────────────────
+
+        private SqliteConnection OpenConnection()
         {
-            DeletePath(path);
+            var conn = new SqliteConnection(_connString);
+            conn.Open();
+            return conn;
         }
 
-        public int GetSeenOrdinalForPath(string path)
+        private static void Execute(SqliteConnection conn, string sql)
         {
-            using var conn = new SqliteConnection(connString);
-            conn.Open();
-            var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT SeenOrdinal FROM Photos WHERE Path = $p LIMIT 1";
-            cmd.Parameters.AddWithValue("$p", path);
-            var r = cmd.ExecuteScalar();
-            if (r == null) return -1;
-            return Convert.ToInt32(r);
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.ExecuteNonQuery();
+        }
+
+        private static void SetSettingCore(SqliteConnection conn, string key, string value)
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText =
+                "INSERT OR REPLACE INTO AppSettings (Key, Value) VALUES ($k, $v);";
+            cmd.Parameters.AddWithValue("$k", key);
+            cmd.Parameters.AddWithValue("$v", value);
+            cmd.ExecuteNonQuery();
         }
     }
 }
